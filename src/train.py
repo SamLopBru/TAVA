@@ -2,6 +2,11 @@ import torch
 import torch.nn as nn
 import pandas as pd
 import os
+from torch.utils.data import DataLoader
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from metrics.metrics import dice_score, iou_score
 
 
 def epoch_train(model: nn.Module, dataloader: DataLoader, criterion: nn.Module, optimizer: torch.optim.Optimizer, device: torch.device):

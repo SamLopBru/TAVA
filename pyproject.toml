@@ -6,12 +6,11 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "opencv-python>=4.13.0.92",
-    "pandas>=2.0",
-    "numpy<2",
     "torch",
     "torchvision",
     "openpyxl",
     "scikit-learn",
+    "pandas>=3.0.1",
 ]
 
 [build-system]

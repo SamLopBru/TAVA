@@ -14,3 +14,5 @@ DMID_PNG/1024/PLA*
 DMID_PNG/1024/TIFF/*
 DMID_PNG/Reports*
 *.Identifier
+
+*.pth
