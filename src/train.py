@@ -62,7 +62,7 @@ def epoch_val(model: nn.Module, dataloader: DataLoader, criterion: nn.Module, de
     return epoch_loss, epoch_dice, epoch_iou
 
 
-def train(model: nn.Module, dataloaders: dict[str, DataLoader], criterion: nn.Module, optimizer: torch.optim.Optimizer, device: torch.device, num_epochs: int, checkpoint_every: bool = False, save_dir: str = "outputs"):
+def train(model: nn.Module, dataloaders: dict[str, DataLoader], criterion: nn.Module, optimizer: torch.optim.Optimizer, device: torch.device, num_epochs: int, checkpoint_every: bool = False, save_dir: str = "outputs", scheduler = None):
     os.makedirs(save_dir, exist_ok=True)
 
     train_loader = dataloaders["train"]
@@ -88,6 +88,13 @@ def train(model: nn.Module, dataloaders: dict[str, DataLoader], criterion: nn.Mo
         history["val_dice"].append(val_dice)
         history["val_iou"].append(val_iou)
 
+        # Step Scheduler
+        if scheduler is not None:
+            if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                scheduler.step(val_dice)
+            else:
+                scheduler.step()
+
         # Save best model
         if val_dice > best_val_dice:
             best_val_dice = val_dice
@@ -95,13 +102,16 @@ def train(model: nn.Module, dataloaders: dict[str, DataLoader], criterion: nn.Mo
 
         # Checkpoint every epoch
         if checkpoint_every:
-            torch.save({
+            checkpoint = {
                 "epoch": epoch + 1,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "best_val_dice": best_val_dice,
                 "history": history,
-            }, os.path.join(save_dir, "last_checkpoint.pth"))
+            }
+            if scheduler is not None:
+                checkpoint["scheduler_state_dict"] = scheduler.state_dict()
+            torch.save(checkpoint, os.path.join(save_dir, "last_checkpoint.pth"))
 
         # Persist metrics to CSV incrementally
         pd.DataFrame(history).to_csv(os.path.join(save_dir, "metrics.csv"), index=False)
