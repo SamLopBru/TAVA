@@ -1,8 +1,14 @@
+import sys
+import os
+# Append project root to path so we can import modules
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import torch
 import torch.nn as nn
 import pandas as pd
-import os
 import matplotlib.pyplot as plt
+
+from metrics.metrics import dice_score, iou_score
 
 
 @torch.no_grad()
@@ -144,3 +150,54 @@ def test(model, dataloaders, criterion, device, save_dir="outputs"):
                 break
 
     return results
+
+if __name__ == "__main__":
+    from config import Config
+    from preprocessing.dataloader import get_dataloaders
+    from models.deeplabv3plus import DeepLabV3Plus
+    from metrics.loss import DiceLoss, CombinedBCEDiceLoss, FocalLoss, CombinedFocalDiceLoss
+
+    cfg = Config()
+    device = torch.device(cfg.DEVICE)
+    
+    print("\n--- Setup Dataloaders ---")
+    dataloaders = get_dataloaders(
+        batch_size=cfg.BATCH_SIZE,
+        image_size=(cfg.IMAGE_SIZE, cfg.IMAGE_SIZE)
+    )
+    
+    print("\n--- Setup Architecture ---")
+    if cfg.MODEL_TYPE == "deeplabv3plus":
+        model = DeepLabV3Plus(num_classes=1).to(device)
+    else:
+        raise ValueError(f"Model {cfg.MODEL_TYPE} not supported.")
+        
+    print("\n--- Setup Optimization ---")
+    if cfg.CRITERION == "dice_loss":
+        criterion = DiceLoss().to(device)
+    elif cfg.CRITERION == "combined_bce_dice_loss":
+        criterion = CombinedBCEDiceLoss().to(device)
+    elif cfg.CRITERION == "focal_loss":
+        criterion = FocalLoss().to(device)
+    elif cfg.CRITERION == "combined_focal_dice_loss":
+        criterion = CombinedFocalDiceLoss().to(device)
+    else:
+        raise ValueError(f"Criterion {cfg.CRITERION} not supported.")
+        
+    save_dir = os.path.join(cfg.SAVE_DIR, f"{cfg.MODEL_TYPE}_{cfg.CRITERION}")
+    checkpoint_path = os.path.join(save_dir, "best_model.pth")
+    if not os.path.exists(checkpoint_path):
+        checkpoint_path = os.path.join(save_dir, "last_checkpoint.pth")
+        
+    if os.path.exists(checkpoint_path):
+        print(f"\n--- Loading weights from {checkpoint_path} ---")
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        if "model_state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["model_state_dict"])
+        else:
+            model.load_state_dict(checkpoint)
+    else:
+        print(f"\n[!] Warning: No checkpoint found at {save_dir}. Testing untrained model...")
+
+    print("\n--- Begin Testing ---")
+    test(model, dataloaders, criterion, device, save_dir=save_dir)
