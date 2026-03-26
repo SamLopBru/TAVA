@@ -4,6 +4,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 import torch.nn as nn
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
 # Local imports
 from preprocessing.dataloader import get_dataloaders
@@ -53,9 +54,14 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.LEARNING_RATE, weight_decay=cfg.WEIGHT_DECAY)
 
     print("\n--- Setup Learning Rate Scheduler ---")
-    # Reduce LR by half if validation dice doesn't improve for 5 epochs
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='max', factor=0.5, patience=5
+    warmup_scheduler = LinearLR(
+        optimizer, start_factor=0.1, total_iters=5
+    )
+    cosine_scheduler = CosineAnnealingLR(
+        optimizer, T_max=cfg.NUM_EPOCHS - 5, eta_min=1e-6
+    )
+    scheduler = SequentialLR(
+        optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[5]
     )
 
     print("\n--- Begin Training ---")
@@ -68,7 +74,9 @@ def main():
         num_epochs=cfg.NUM_EPOCHS,
         checkpoint_every=True,
         save_dir=os.path.join(cfg.SAVE_DIR, f"{cfg.MODEL_TYPE}_{cfg.CRITERION}"),
-        scheduler=scheduler
+        scheduler=scheduler,
+        max_grad_norm=cfg.MAX_GRAD_NORM,
+        patience=cfg.EARLY_STOPPING_PATIENCE,
     )
     
     print("\n--- Training Complete ---")

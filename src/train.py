@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from metrics.metrics import dice_score, iou_score
 
 
-def epoch_train(model: nn.Module, dataloader: DataLoader, criterion: nn.Module, optimizer: torch.optim.Optimizer, device: torch.device):
+def epoch_train(model: nn.Module, dataloader: DataLoader, criterion: nn.Module, optimizer: torch.optim.Optimizer, device: torch.device, max_grad_norm: float = 1.0):
     model.train()
     running_loss = 0.0
     running_dice = 0.0
@@ -27,6 +27,8 @@ def epoch_train(model: nn.Module, dataloader: DataLoader, criterion: nn.Module, 
         loss = criterion(outputs, masks)
 
         loss.backward()
+        # Gradient clipping to prevent exploding gradients (critical for Transformers)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
         optimizer.step()
 
         running_loss += loss.item()
@@ -67,21 +69,23 @@ def epoch_val(model: nn.Module, dataloader: DataLoader, criterion: nn.Module, de
     return epoch_loss, epoch_dice, epoch_iou, epoch_time
 
 
-def train(model: nn.Module, dataloaders: dict[str, DataLoader], criterion: nn.Module, optimizer: torch.optim.Optimizer, device: torch.device, num_epochs: int, checkpoint_every: bool = False, save_dir: str = "outputs", scheduler=None):
+def train(model: nn.Module, dataloaders: dict[str, DataLoader], criterion: nn.Module, optimizer: torch.optim.Optimizer, device: torch.device, num_epochs: int, checkpoint_every: bool = False, save_dir: str = "outputs", scheduler=None, max_grad_norm: float = 1.0, patience: int = 15):
     os.makedirs(save_dir, exist_ok=True)
 
     train_loader = dataloaders["train"]
     val_loader = dataloaders["val"]
     best_val_dice = 0.0
+    patience_counter = 0
 
     history = {
         "epoch": [],
         "train_loss": [], "train_dice": [], "train_iou": [], "train_time_s": [],
         "val_loss":   [], "val_dice":   [], "val_iou":   [], "val_time_s":   [],
+        "learning_rate": [],
     }
 
     for epoch in range(num_epochs):
-        epoch_loss, epoch_dice, epoch_iou, train_time = epoch_train(model, train_loader, criterion, optimizer, device)
+        epoch_loss, epoch_dice, epoch_iou, train_time = epoch_train(model, train_loader, criterion, optimizer, device, max_grad_norm=max_grad_norm)
         val_loss, val_dice, val_iou, val_time = epoch_val(model, val_loader, criterion, device)
 
         # Store metrics
@@ -95,6 +99,9 @@ def train(model: nn.Module, dataloaders: dict[str, DataLoader], criterion: nn.Mo
         history["val_iou"].append(val_iou)
         history["val_time_s"].append(round(val_time, 2))
 
+        current_lr = optimizer.param_groups[0]['lr']
+        history["learning_rate"].append(current_lr)
+
         # Step Scheduler
         if scheduler is not None:
             if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -105,7 +112,10 @@ def train(model: nn.Module, dataloaders: dict[str, DataLoader], criterion: nn.Mo
         # Save best model
         if val_dice > best_val_dice:
             best_val_dice = val_dice
+            patience_counter = 0
             torch.save(model.state_dict(), os.path.join(save_dir, "best_model.pth"))
+        else:
+            patience_counter += 1
 
         # Checkpoint every epoch
         if checkpoint_every:
@@ -126,5 +136,10 @@ def train(model: nn.Module, dataloaders: dict[str, DataLoader], criterion: nn.Mo
         print(f"Epoch {epoch+1}/{num_epochs}")
         print(f"  Train  -> Loss: {epoch_loss:.4f} | Dice: {epoch_dice:.4f} | IoU: {epoch_iou:.4f} | Time: {train_time:.1f}s")
         print(f"  Val    -> Loss: {val_loss:.4f} | Dice: {val_dice:.4f} | IoU: {val_iou:.4f} | Time: {val_time:.1f}s")
+        print(f"  LR     -> {current_lr:.2e} | Patience: {patience_counter}/{patience}")
+
+        if patience_counter >= patience:
+            print(f"\n[Early Stopping] No improvement for {patience} epochs. Stopping.")
+            break
 
     return history

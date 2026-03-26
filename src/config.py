@@ -10,10 +10,16 @@ class Config:
 
     # Training hyperparameters
     BATCH_SIZE: int = 16
-    NUM_EPOCHS: int = 50
+    NUM_EPOCHS: int = 100
     LEARNING_RATE: float = 1e-4
     WEIGHT_DECAY: float = 1e-4
     IMAGE_SIZE: int = 256
+
+    # Early stopping
+    EARLY_STOPPING_PATIENCE: int = 15
+
+    # Gradient clipping
+    MAX_GRAD_NORM: float = 1.0
 
     # Loss function
     # Options: "dice_loss", "combined_bce_dice_loss", "focal_loss", "combined_focal_dice_loss"
